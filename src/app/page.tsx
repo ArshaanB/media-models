@@ -1,6 +1,7 @@
 "use client";
 
 import type { FormEvent } from "react";
+import type { ChangeEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Hanken_Grotesk, Instrument_Serif } from "next/font/google";
 
@@ -83,6 +84,8 @@ function SelectChevron() {
 
 export default function Home() {
   const [prompt, setPrompt] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
+  const [imageFileName, setImageFileName] = useState("");
   const [provider, setProvider] = useState<Provider>("Grok");
   const [model, setModel] = useState<GrokModel>("grok-imagine-image-quality");
   const [generations, setGenerations] = useState<Generation[]>([]);
@@ -94,6 +97,12 @@ export default function Home() {
     () => GROK_MODELS.find((grokModel) => grokModel.id === model),
     [model],
   );
+  const supportsImageInput = selectedModel?.kind === "video";
+  const requiresImageInput = model === "grok-imagine-video-1.5-preview";
+  const canSubmit =
+    Boolean(prompt.trim()) &&
+    !isCreating &&
+    (!requiresImageInput || Boolean(imageUrl.trim()));
 
   useEffect(() => {
     let isActive = true;
@@ -134,7 +143,8 @@ export default function Home() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const value = prompt.trim();
-    if (!value || isCreating) return;
+    const imageValue = imageUrl.trim();
+    if (!value || !canSubmit) return;
 
     setIsCreating(true);
     setError("");
@@ -143,7 +153,12 @@ export default function Home() {
       const response = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, model, prompt: value }),
+        body: JSON.stringify({
+          provider,
+          model,
+          prompt: value,
+          imageUrl: supportsImageInput ? imageValue : "",
+        }),
       });
       const data = (await response.json()) as GenerateResponse;
 
@@ -163,6 +178,43 @@ export default function Home() {
     }
   }
 
+  async function handleImageFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setError("Choose an image file.");
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setError("Choose an image smaller than 10 MB.");
+      event.target.value = "";
+      return;
+    }
+
+    setError("");
+
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === "string") resolve(reader.result);
+        else reject(new Error("Could not read image file."));
+      };
+      reader.onerror = () => reject(new Error("Could not read image file."));
+      reader.readAsDataURL(file);
+    });
+
+    setImageUrl(dataUrl);
+    setImageFileName(file.name);
+  }
+
+  function clearImageInput() {
+    setImageUrl("");
+    setImageFileName("");
+  }
+
   return (
     <div className={`${sans.className} min-h-screen bg-[#fbf7f2] text-[#2b2622]`}>
       <main className="mx-auto max-w-5xl px-5 py-10 sm:px-6 sm:py-14">
@@ -173,57 +225,100 @@ export default function Home() {
           </p>
         </header>
 
-        <form onSubmit={handleSubmit} className="grid gap-3 lg:grid-cols-[150px_210px_1fr_auto]">
-          <label className="relative block">
-            <span className="sr-only">Provider</span>
-            <select
-              value={provider}
-              onChange={(event) => setProvider(event.target.value as Provider)}
-              className="h-12 w-full appearance-none rounded-full border border-[#e7dccf] bg-white py-3 pl-5 pr-10 text-sm text-[#9d6d57] outline-none focus:border-[#c9a98f]"
+        <form onSubmit={handleSubmit} className="grid gap-3">
+          <div className="grid gap-3 lg:grid-cols-[150px_210px_1fr_auto]">
+            <label className="relative block">
+              <span className="sr-only">Provider</span>
+              <select
+                value={provider}
+                onChange={(event) => setProvider(event.target.value as Provider)}
+                className="h-12 w-full appearance-none rounded-full border border-[#e7dccf] bg-white py-3 pl-5 pr-10 text-sm text-[#9d6d57] outline-none focus:border-[#c9a98f]"
+              >
+                {PROVIDERS.map((providerOption) => (
+                  <option key={providerOption} value={providerOption}>
+                    {providerOption}
+                  </option>
+                ))}
+              </select>
+              <SelectChevron />
+            </label>
+
+            <label className="relative block">
+              <span className="sr-only">Grok model</span>
+              <select
+                value={model}
+                onChange={(event) => setModel(event.target.value as GrokModel)}
+                className="h-12 w-full appearance-none rounded-full border border-[#e7dccf] bg-white py-3 pl-5 pr-10 text-sm text-[#9d6d57] outline-none focus:border-[#c9a98f]"
+              >
+                {GROK_MODELS.map((grokModel) => (
+                  <option key={grokModel.id} value={grokModel.id}>
+                    {grokModel.label}
+                  </option>
+                ))}
+              </select>
+              <SelectChevron />
+            </label>
+
+            <input
+              value={prompt}
+              onChange={(event) => setPrompt(event.target.value)}
+              placeholder={
+                selectedModel?.kind === "video"
+                  ? "a slow cinematic pan across a glass greenhouse..."
+                  : "a still life in soft morning light..."
+              }
+              className="h-12 min-w-0 rounded-full border border-[#e7dccf] bg-white px-5 text-base font-light outline-none placeholder:text-[#a89c90] focus:border-[#c9a98f]"
+            />
+
+            <button
+              type="submit"
+              disabled={!canSubmit}
+              className="h-12 rounded-full bg-[#a06049] px-7 text-sm font-medium text-white transition hover:bg-[#8f543f] disabled:cursor-not-allowed disabled:opacity-30"
             >
-              {PROVIDERS.map((providerOption) => (
-                <option key={providerOption} value={providerOption}>
-                  {providerOption}
-                </option>
-              ))}
-            </select>
-            <SelectChevron />
-          </label>
+              {isCreating ? "Creating" : "Create"}
+            </button>
+          </div>
 
-          <label className="relative block">
-            <span className="sr-only">Grok model</span>
-            <select
-              value={model}
-              onChange={(event) => setModel(event.target.value as GrokModel)}
-              className="h-12 w-full appearance-none rounded-full border border-[#e7dccf] bg-white py-3 pl-5 pr-10 text-sm text-[#9d6d57] outline-none focus:border-[#c9a98f]"
-            >
-              {GROK_MODELS.map((grokModel) => (
-                <option key={grokModel.id} value={grokModel.id}>
-                  {grokModel.label}
-                </option>
-              ))}
-            </select>
-            <SelectChevron />
-          </label>
+          {supportsImageInput ? (
+            <div className="grid gap-3 md:grid-cols-[1fr_auto_auto]">
+              <label className="block">
+                <span className="sr-only">Image URL</span>
+                <input
+                  value={imageUrl.startsWith("data:image/") ? imageFileName : imageUrl}
+                  onChange={(event) => {
+                    setImageUrl(event.target.value);
+                    setImageFileName("");
+                  }}
+                  placeholder={
+                    requiresImageInput
+                      ? "https://example.com/source-image.jpg"
+                      : "optional image URL"
+                  }
+                  readOnly={imageUrl.startsWith("data:image/")}
+                  className="h-12 w-full min-w-0 rounded-full border border-[#e7dccf] bg-white px-5 text-base font-light outline-none placeholder:text-[#a89c90] read-only:text-[#8a7f74] focus:border-[#c9a98f]"
+                />
+              </label>
 
-          <input
-            value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
-            placeholder={
-              selectedModel?.kind === "video"
-                ? "a slow cinematic pan across a glass greenhouse..."
-                : "a still life in soft morning light..."
-            }
-            className="h-12 min-w-0 rounded-full border border-[#e7dccf] bg-white px-5 text-base font-light outline-none placeholder:text-[#a89c90] focus:border-[#c9a98f]"
-          />
+              <label className="flex h-12 cursor-pointer items-center justify-center rounded-full border border-[#d8c8b8] bg-white px-5 text-sm font-medium text-[#9d6d57] transition hover:border-[#c9a98f]">
+                <span>Choose image</span>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={handleImageFileChange}
+                  className="sr-only"
+                />
+              </label>
 
-          <button
-            type="submit"
-            disabled={!prompt.trim() || isCreating}
-            className="h-12 rounded-full bg-[#a06049] px-7 text-sm font-medium text-white transition hover:bg-[#8f543f] disabled:cursor-not-allowed disabled:opacity-30"
-          >
-            {isCreating ? "Creating" : "Create"}
-          </button>
+              <button
+                type="button"
+                onClick={clearImageInput}
+                disabled={!imageUrl}
+                className="h-12 rounded-full border border-[#d8c8b8] bg-white px-5 text-sm font-medium text-[#9d6d57] transition hover:border-[#c9a98f] disabled:cursor-not-allowed disabled:opacity-30"
+              >
+                Clear
+              </button>
+            </div>
+          ) : null}
         </form>
 
         {error ? (

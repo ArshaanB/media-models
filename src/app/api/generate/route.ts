@@ -23,6 +23,15 @@ type XaiVideoStatusResponse = {
   error?: unknown;
 };
 
+type XaiVideoRequestBody = {
+  model: string;
+  prompt: string;
+  duration: number;
+  aspect_ratio: string;
+  resolution: string;
+  image?: { url: string };
+};
+
 function jsonError(message: string, status = 400) {
   return Response.json({ error: message }, { status });
 }
@@ -35,6 +44,22 @@ function getPrompt(body: unknown) {
 function getModel(body: unknown) {
   if (!body || typeof body !== "object" || !("model" in body)) return "";
   return typeof body.model === "string" ? body.model : "";
+}
+
+function getImageUrl(body: unknown) {
+  if (!body || typeof body !== "object" || !("imageUrl" in body)) return "";
+  return typeof body.imageUrl === "string" ? body.imageUrl.trim() : "";
+}
+
+function isValidImageUrl(value: string) {
+  if (value.startsWith("data:image/")) return true;
+
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
 }
 
 async function parseXaiError(response: Response) {
@@ -101,14 +126,23 @@ async function generateImage(apiKey: string, model: string, prompt: string) {
   return url;
 }
 
-async function generateVideo(apiKey: string, model: string, prompt: string) {
-  const requestBody = {
+async function generateVideo(
+  apiKey: string,
+  model: string,
+  prompt: string,
+  imageUrl: string,
+) {
+  const requestBody: XaiVideoRequestBody = {
     model,
     prompt,
     duration: 6,
     aspect_ratio: "16:9",
     resolution: "480p",
   };
+
+  if (imageUrl) {
+    requestBody.image = { url: imageUrl };
+  }
 
   const startResponse = await fetch("https://api.x.ai/v1/videos/generations", {
     method: "POST",
@@ -169,16 +203,23 @@ export async function POST(request: Request) {
 
   const prompt = getPrompt(body);
   const model = getModel(body);
+  const imageUrl = getImageUrl(body);
   const kind = GROK_MODELS[model];
 
   if (!prompt) return jsonError("Prompt is required.");
   if (!kind) return jsonError("Unsupported Grok model.");
+  if (imageUrl && !isValidImageUrl(imageUrl)) {
+    return jsonError("Image must be an HTTP URL or a base64 image data URI.");
+  }
+  if (model === "grok-imagine-video-1.5-preview" && !imageUrl) {
+    return jsonError("Image is required for grok-imagine-video-1.5-preview.");
+  }
 
   try {
     const url =
       kind === "image"
         ? await generateImage(apiKey, model, prompt)
-        : await generateVideo(apiKey, model, prompt);
+        : await generateVideo(apiKey, model, prompt, imageUrl);
 
     const generation: Generation = {
       id: crypto.randomUUID(),
