@@ -27,8 +27,8 @@ type XaiVideoRequestBody = {
   model: string;
   prompt: string;
   duration: number;
-  aspect_ratio: string;
   resolution: string;
+  aspect_ratio?: string;
   image?: { url: string };
 };
 
@@ -136,12 +136,13 @@ async function generateVideo(
     model,
     prompt,
     duration: 6,
-    aspect_ratio: "16:9",
     resolution: "480p",
   };
 
   if (imageUrl) {
     requestBody.image = { url: imageUrl };
+  } else {
+    requestBody.aspect_ratio = "16:9";
   }
 
   const startResponse = await fetch("https://api.x.ai/v1/videos/generations", {

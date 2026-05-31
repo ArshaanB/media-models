@@ -362,7 +362,7 @@ export default function Home() {
                     <video
                       src={generation.url}
                       controls
-                      className="aspect-[4/5] w-full rounded-lg bg-black object-cover"
+                      className="aspect-[9/16] w-full rounded-lg bg-black object-contain"
                     />
                   )}
                   <figcaption className="mt-3">
