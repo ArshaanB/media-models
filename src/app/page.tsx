@@ -20,6 +20,11 @@ const PROVIDERS = ["Grok"] as const;
 const GROK_MODELS = [
   { id: "grok-imagine-image-quality", label: "Imagine Image", kind: "image" },
   { id: "grok-imagine-video", label: "Imagine Video", kind: "video" },
+  {
+    id: "grok-imagine-video-1.5-preview",
+    label: "Imagine Video 1.5 Preview",
+    kind: "video",
+  },
 ] as const;
 
 type Provider = (typeof PROVIDERS)[number];
@@ -49,6 +54,7 @@ type GenerateResponse = {
 const modelLabels: Record<GrokModel, string> = {
   "grok-imagine-image-quality": "Imagine Image",
   "grok-imagine-video": "Imagine Video",
+  "grok-imagine-video-1.5-preview": "Imagine Video 1.5 Preview",
 };
 
 function isGeneration(value: unknown): value is Generation {

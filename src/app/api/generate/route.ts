@@ -5,6 +5,7 @@ export const runtime = "nodejs";
 const GROK_MODELS: Record<string, MediaKind> = {
   "grok-imagine-image-quality": "image",
   "grok-imagine-video": "video",
+  "grok-imagine-video-1.5-preview": "video",
 };
 
 type XaiImageResponse = {
@@ -40,13 +41,44 @@ async function parseXaiError(response: Response) {
   const fallback = `xAI request failed with status ${response.status}`;
   try {
     const data = await response.json();
-    if (typeof data?.error === "string") return data.error;
-    if (typeof data?.error?.message === "string") return data.error.message;
-    if (typeof data?.message === "string") return data.message;
-    return fallback;
+    const message =
+      typeof data?.error === "string"
+        ? data.error
+        : typeof data?.error?.message === "string"
+          ? data.error.message
+          : typeof data?.message === "string"
+            ? data.message
+            : fallback;
+
+    return `${message} xAI status: ${response.status}. Payload: ${JSON.stringify(data)}`;
   } catch {
     return fallback;
   }
+}
+
+function getErrorMessage(error: unknown) {
+  if (!error) return "";
+  if (typeof error === "string") return error;
+  if (typeof error !== "object") return "";
+
+  const value = error as { code?: unknown; message?: unknown };
+  if (typeof value.code === "string" && typeof value.message === "string") {
+    return `[${value.code}]: ${value.message}`;
+  }
+  if (typeof value.message === "string") return value.message;
+  return "";
+}
+
+function formatVideoStatusError(
+  statusData: XaiVideoStatusResponse,
+  requestId: string,
+  model: string,
+) {
+  const details = getErrorMessage(statusData.error);
+  const rawPayload = JSON.stringify(statusData);
+  const message = details ? ` ${details}` : ".";
+
+  return `xAI video request ${statusData.status}${message} Model: ${model}. Request ID: ${requestId}. Payload: ${rawPayload}`;
 }
 
 async function generateImage(apiKey: string, model: string, prompt: string) {
@@ -70,13 +102,21 @@ async function generateImage(apiKey: string, model: string, prompt: string) {
 }
 
 async function generateVideo(apiKey: string, model: string, prompt: string) {
+  const requestBody = {
+    model,
+    prompt,
+    duration: 6,
+    aspect_ratio: "16:9",
+    resolution: "480p",
+  };
+
   const startResponse = await fetch("https://api.x.ai/v1/videos/generations", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ model, prompt, duration: 6 }),
+    body: JSON.stringify(requestBody),
   });
 
   if (!startResponse.ok) {
@@ -107,11 +147,13 @@ async function generateVideo(apiKey: string, model: string, prompt: string) {
       return statusData.video.url;
     }
     if (statusData.status === "failed" || statusData.status === "expired") {
-      throw new Error(`xAI video request ${statusData.status}.`);
+      throw new Error(
+        formatVideoStatusError(statusData, startData.request_id, model),
+      );
     }
   }
 
-  throw new Error("xAI video generation timed out.");
+  throw new Error(`xAI video generation timed out. Request ID: ${startData.request_id}`);
 }
 
 export async function POST(request: Request) {
